@@ -15,7 +15,7 @@ routes.post("/buy/search/limit/:type", userAccess, async (req, res) => {
       .json({ success: false, message: "User not found with given id" });
   }
 
-  const { qty } = req.body;
+  const { qty, amt, name } = req.body;
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ["card"],
     line_items: [
@@ -23,9 +23,9 @@ routes.post("/buy/search/limit/:type", userAccess, async (req, res) => {
         price_data: {
           currency: "usd",
           product_data: {
-            name: `Additional search limit (${qty})`,
+            name: name,
           },
-          unit_amount: 55,
+          unit_amount: Math.round(amt * 100),
         },
         quantity: qty,
       },
@@ -34,7 +34,7 @@ routes.post("/buy/search/limit/:type", userAccess, async (req, res) => {
     success_url: `${process.env.FRONTEND_URL}/status/success`,
     cancel_url: `${process.env.FRONTEND_URL}/status/failed`,
     payment_intent_data: {
-      description: "Payment for Additional Search Limit",
+      description: `Payment for Additional ${req.params.type} Limit`,
       metadata: {
         userId: req.user.id,
         serviceType: req.params.type,
@@ -57,6 +57,7 @@ routes.post(
     const event = req.body;
     if (event.type === "checkout.session.completed") {
       let metaDataObj = event.data.object.metadata;
+      console.log(event.data);
       let user = await User.findById(metaDataObj.userId);
       if (!user) {
         return res
@@ -69,16 +70,28 @@ routes.post(
           .status(400)
           .json({ success: false, message: "Invalid quantity value" });
       }
-
-      await User.findByIdAndUpdate(
-        metaDataObj.userId,
-        {
-          $set: {
-            search_limit: user.search_limit + Number(quantity),
+      if (metaDataObj.serviceType === "search") {
+        await User.findByIdAndUpdate(
+          metaDataObj.userId,
+          {
+            $set: {
+              search_limit: user.search_limit + Number(quantity),
+            },
           },
-        },
-        { new: true }
-      );
+          { new: true }
+        );
+      } else if (metaDataObj.serviceType === "job_posting") {
+        await User.findByIdAndUpdate(
+          metaDataObj.userId,
+          {
+            $set: {
+              posting_limit: user.posting_limit + Number(quantity),
+            },
+          },
+          { new: true }
+        );
+      }
+
       await Payment.create({
         userId: metaDataObj.userId,
         payment_id: `${user.name.trim().split(" ")[0][0].toUpperCase()}_${
@@ -92,7 +105,7 @@ routes.post(
         remarks:
           metaDataObj.serviceType === "search"
             ? `Purhcased search limit of ${metaDataObj.quantity} qty`
-            : "",
+            : `Purhcased post limit of ${metaDataObj.quantity} qty`,
       });
 
       return res
