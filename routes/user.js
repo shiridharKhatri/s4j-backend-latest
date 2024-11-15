@@ -10,6 +10,7 @@ const verificationMail = require("../mail/verification");
 const userAccess = require("../middleware/userAccess");
 const adminAccess = require("../middleware/adminAccess");
 const Admin = require("../models/Admin");
+const forgetPassword = require("../mail/forgetPassword");
 
 const loginLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
@@ -344,43 +345,118 @@ routes.post("/auth/change/password/:id", userAccess, async (req, res) => {
   }
 });
 
-routes.post(
-  "/auth/user/reset/password/email/verificaion/:mail",
-  async (req, res) => {
-    try {
-      const { mail } = req.params;
-      let verificationCode = generateCodeNumber();
-      let user = await User.findOne({ email: mail });
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          type: "mail",
-          message: "No user found with the given email address",
-        });
-      }
-      verificationMail(
-        user.email,
-        user.name,
-        verificationCode,
-        "Email verification code",
-        "It seems like you’ve requested to reset your password. Please copy the six-digit verification code below to proceed and regain access to your account."
-      );
-      await User.findByIdAndUpdate(
-        user._id,
-        {
-          $set: { verificationCode: verificationCode, isVerified: false },
-        },
-        { new: true }
-      );
-      return res.status(200).json({
-        success: true,
-        message: "Verification code has been sent to your mail",
+routes.post("/auth/forget/password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    let code = generateCodeNumber();
+    let user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found with given email address",
       });
-    } catch (error) {
-      return res
-        .status(500)
-        .json({ success: false, type: "server", message: error.message });
     }
+
+    let url = `${process.env.FRONTEND_URL}/user/forget/password/${email}/${code}`;
+    forgetPassword(user.email, user.name, "Forget password verification", url);
+
+    await User.findByIdAndUpdate(user._id, {
+      $set: { verificationCode: code, isVerified: false },
+    });
+    res.status(200).json({
+      success: true,
+      message: "Please check your email to change password",
+    });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ success: false, type: "server", message: error.message });
   }
-);
+});
+
+routes.post("/auth/forget/password/verify/:code/:email", async (req, res) => {
+  try {
+    const { code, email } = req.params;
+    let user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found with given email address",
+      });
+    }
+    if (Number(user.verificationCode) !== Number(code)) {
+      return res.status(401).json({
+        success: false,
+        message: "The code may not be valid, as it might have already expired.",
+      });
+    }
+    res.status(200).json({
+      succes: true,
+      message: "The code has been successfully validated.",
+    });
+  } catch (error) {
+    return res.status(500).json({ succes: false, message: error.message });
+  }
+});
+
+routes.post("/auth/code/verification", async (req, res) => {
+  try {
+    let { email, code } = req.body;
+    let user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found with given email address",
+      });
+    } else if (Number(user.verificationCode) !== Number(code)) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "The link may have expired. Please try using the Forgot Password option again.",
+      });
+    }
+    res.status(200).json({
+      succes: true,
+      message: "Verification successful enter your new password",
+    });
+  } catch (error) {
+    return res.status(500).json({ succes: false, message: error.message });
+  }
+});
+
+routes.post("/auth/reset/password", async (req, res) => {
+  try {
+    let { email, code, password } = req.body;
+    let user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "No user found with the provided email address.",
+      });
+    }
+    if (user && Number(user.verificationCode) !== Number(code)) {
+      return res.status(401).json({
+        success: false,
+        message:
+          "The verification code is incorrect. Password reset cannot be completed.",
+      });
+    }
+    let salt = await bcrypt.genSalt(10);
+    let hashedPas = await bcrypt.hash(password, salt);
+    await User.findByIdAndUpdate(
+      user._id,
+      {
+        $set: { verificationCode: null, isVerified: true, password: hashedPas },
+      },
+      { new: true }
+    );
+    res.status(200).json({
+      success: true,
+      message: "Your password has been successfully reset.",
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 module.exports = routes;

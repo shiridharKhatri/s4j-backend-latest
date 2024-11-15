@@ -31,8 +31,8 @@ routes.post("/buy/search/limit/:type", userAccess, async (req, res) => {
       },
     ],
     mode: "payment",
-    success_url: `${process.env.FRONTEND_URL}/status/success`,
-    cancel_url: `${process.env.FRONTEND_URL}/status/failed`,
+    success_url: `${process.env.FRONTEND_URL}/status/success/${process.env.SUCCESS_ID}`,
+    cancel_url: `${process.env.FRONTEND_URL}/status/cancel/${process.env.CANCEL_ID}`,
     payment_intent_data: {
       description: `Payment for Additional ${req.params.type} Limit`,
       metadata: {
@@ -57,7 +57,6 @@ routes.post(
     const event = req.body;
     if (event.type === "checkout.session.completed") {
       let metaDataObj = event.data.object.metadata;
-      console.log(event.data);
       let user = await User.findById(metaDataObj.userId);
       if (!user) {
         return res

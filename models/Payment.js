@@ -43,13 +43,6 @@ const paymentSchema = mongoose.Schema({
       this.serviceType === "search";
     },
   },
-  jobId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "post-details",
-    require: () => {
-      this.serviceType === "job_posting";
-    },
-  },
   remarks: {
     type: String,
   },

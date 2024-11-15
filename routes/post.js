@@ -421,7 +421,7 @@ routes.post("/action/post/:state", async (req, res) => {
         return (
           e.position.some((element) =>
             position.includes(element.toLowerCase())
-          ) && e.state.toLowerCase() === state.toLowerCase()
+          ) && state.includes(e.state.toLowerCase())
         );
       });
       return res.status(200).json({
